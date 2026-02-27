@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Usuarios - CRUD</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f7f7f7; color:#222; margin:0; padding:20px; }
+        .container { max-width: 900px; margin: 0 auto; }
+        h1 { font-size: 1.6rem; margin-bottom: 1rem; }
+        .form-section, .table-section { background: #fff; padding: 16px; border: 1px solid #e0e0e0; border-radius: 6px; margin-bottom: 16px; }
+        label { display:block; margin: 8px 0 4px; font-weight:600; }
+        input { width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; }
+        .button-group { display:flex; gap:8px; margin-top:8px; }
+        button { padding:8px 12px; border-radius:4px; border:1px solid #ccc; background:#eee; cursor:pointer; }
+        table { width:100%; border-collapse:collapse; margin-top:8px; }
+        th, td { padding:8px; border-bottom:1px solid #eee; text-align:left; }
+        .actions button { padding:6px 8px; }
+        .loading { display:none; color:#666; }
+        .empty-state { padding:20px; text-align:center; color:#666; }
+        .alert { padding:10px; margin-bottom:12px; border-radius:4px; display:none; }
+        .alert.success { background:#e6ffed; color:#145214; border:1px solid #c6f6d5; display:block; }
+        .alert.error { background:#ffe6e6; color:#6b1414; border:1px solid #f5c6cb; display:block; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Gestión de Usuarios</h1>
+
+        <div id="alertContainer"></div>
+
+        <div class="content">
+            <!-- Formulario CRUD -->
+            <div class="form-section">
+                <h2>Formulario</h2>
+
+                <div class="info-box">
+                    <strong>API Proxy:</strong> /api/usuarios/
+                </div>
+
+                <form id="usuarioForm">
+                    <div class="form-group">
+                        <label for="id">ID *</label>
+                        <input type="number" id="id" name="id" placeholder="Ej: 4" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="nombre">Nombre *</label>
+                        <input type="text" id="nombre" name="nombre" placeholder="Ej: Juan" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="edad">Edad *</label>
+                        <input type="number" id="edad" name="edad" placeholder="Ej: 25" required>
+                    </div>
+
+                        <div class="button-group">
+                            <button type="button" class="btn-primary" onclick="agregarUsuario()">Crear</button>
+                            <button type="button" class="btn-primary" onclick="actualizarUsuario()" style="background-color: #ffa502;">Actualizar</button>
+                            <button type="button" class="btn-danger" onclick="limpiarFormulario()">Limpiar</button>
+                        </div>
+
+                    <div class="form-mode" id="formMode"></div>
+                </form>
+            </div>
+
+            <!-- Tabla de Usuarios -->
+            <div class="table-section">
+                <h2>Usuarios</h2>
+                <div class="loading" id="loading">Cargando datos...</div>
+                <div id="tableContainer"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_ENDPOINT = '/api/usuarios/';
+
+        // Cargar usuarios al iniciar
+        document.addEventListener('DOMContentLoaded', function() {
+            cargarUsuarios();
+        });
+
+        // Cargar todos los usuarios
+        async function cargarUsuarios() {
+            try {
+                document.getElementById('loading').style.display = 'block';
+                const response = await fetch(API_ENDPOINT);
+                
+                if (!response.ok) {
+                    throw new Error(`Error: ${response.status}`);
+                }
+
+                const data = await response.json();
+                mostrarUsuarios(data.usuarios || []);
+                mostrarAlerta(`Se cargaron ${data.total} usuario(s)`, 'info');
+            } catch (error) {
+                mostrarAlerta(`Error al cargar usuarios: ${error.message}`, 'error');
+                mostrarUsuarios([]);
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        // Mostrar usuarios en tabla
+        function mostrarUsuarios(usuarios) {
+            const tableContainer = document.getElementById('tableContainer');
+
+            if (usuarios.length === 0) {
+                tableContainer.innerHTML = '<div class="empty-state">No hay usuarios registrados</div>';
+                return;
+            }
+
+            let html = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Nombre</th>
+                            <th>Edad</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            usuarios.forEach(usuario => {
+                html += `
+                    <tr>
+                        <td>${usuario.id}</td>
+                        <td>${usuario.nombre}</td>
+                        <td>${usuario.edad}</td>
+                        <td>
+                            <div class="actions">
+                                <button class="btn-update" onclick="editarUsuario(${usuario.id}, '${usuario.nombre}', ${usuario.edad})">Editar</button>
+                                <button class="btn-delete-row" onclick="eliminarUsuario(${usuario.id})">Eliminar</button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                    </tbody>
+                </table>
+            `;
+
+            tableContainer.innerHTML = html;
+        }
+
+        // Agregar usuario
+        async function agregarUsuario() {
+            const id = parseInt(document.getElementById('id').value);
+            const nombre = document.getElementById('nombre').value.trim();
+            const edad = parseInt(document.getElementById('edad').value);
+
+            if (!validarFormulario(id, nombre, edad)) return;
+
+            try {
+                const response = await fetch(API_ENDPOINT, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        id: id,
+                        nombre: nombre,
+                        edad: edad
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Error al agregar usuario');
+                }
+
+                mostrarAlerta(`Usuario "${nombre}" agregado exitosamente`, 'success');
+                limpiarFormulario();
+                cargarUsuarios();
+            } catch (error) {
+                mostrarAlerta(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        // Editar usuario (cargar datos en formulario)
+        function editarUsuario(id, nombre, edad) {
+            document.getElementById('id').value = id;
+            document.getElementById('nombre').value = nombre;
+            document.getElementById('edad').value = edad;
+            document.getElementById('formMode').textContent = `Modo: Editando usuario ID ${id}`;
+            document.getElementById('usuarioForm').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // Actualizar usuario
+        async function actualizarUsuario() {
+            const id = parseInt(document.getElementById('id').value);
+            const nombre = document.getElementById('nombre').value.trim();
+            const edad = parseInt(document.getElementById('edad').value);
+
+            if (!validarFormulario(id, nombre, edad)) return;
+
+            try {
+                const response = await fetch(`${API_ENDPOINT}${id}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        nombre: nombre,
+                        edad: edad
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Error al actualizar usuario');
+                }
+
+                mostrarAlerta(`Usuario "${nombre}" actualizado exitosamente`, 'success');
+                limpiarFormulario();
+                cargarUsuarios();
+            } catch (error) {
+                mostrarAlerta(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        // Eliminar usuario
+        async function eliminarUsuario(idEliminar) {
+            if (!confirm(`¿Está seguro de que desea eliminar el usuario con ID ${idEliminar}?`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_ENDPOINT}${idEliminar}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Error al eliminar usuario');
+                }
+
+                mostrarAlerta(`Usuario eliminado exitosamente`, 'success');
+                cargarUsuarios();
+            } catch (error) {
+                mostrarAlerta(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        // Limpiar formulario
+        function limpiarFormulario() {
+            document.getElementById('usuarioForm').reset();
+            document.getElementById('formMode').textContent = '';
+        }
+
+        // Validar formulario
+        function validarFormulario(id, nombre, edad) {
+            if (!id || !nombre || !edad) {
+                mostrarAlerta('Todos los campos son obligatorios', 'error');
+                return false;
+            }
+
+            if (id <= 0 || edad <= 0) {
+                mostrarAlerta('ID y Edad deben ser mayores a 0', 'error');
+                return false;
+            }
+
+            if (nombre.length < 2) {
+                mostrarAlerta('El nombre debe tener al menos 2 caracteres', 'error');
+                return false;
+            }
+
+            return true;
+        }
+
+        // Mostrar alertas
+        function mostrarAlerta(mensaje, tipo) {
+            const container = document.getElementById('alertContainer');
+            const alert = document.createElement('div');
+            alert.className = `alert ${tipo}`;
+            alert.textContent = mensaje;
+            container.innerHTML = '';
+            container.appendChild(alert);
+
+            setTimeout(() => {
+                alert.style.opacity = '1';
+            }, 100);
+
+            if (tipo !== 'error') {
+                setTimeout(() => {
+                    alert.remove();
+                }, 4000);
+            }
+        }
+    </script>
+</body>
+</html>
